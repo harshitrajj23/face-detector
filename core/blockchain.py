@@ -285,6 +285,9 @@ class EVMVerificationLedger:
     ):
         from web3 import Web3
 
+        # Automatically load .env if present
+        self._load_local_env()
+
         self.w3: Optional[Web3] = None
         self.contract = None
         self.account = None
@@ -301,13 +304,35 @@ class EVMVerificationLedger:
 
         self._setup_connection()
 
+    def _load_local_env(self):
+        """Loads key-value pairs from .env file into os.environ if not already set."""
+        env_file = Path(__file__).resolve().parent.parent / ".env"
+        if env_file.exists():
+            try:
+                with open(env_file, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k, v = k.strip(), v.strip().strip("'\"")
+                            if k and k not in os.environ:
+                                os.environ[k] = v
+            except Exception:
+                pass
+
     def _setup_connection(self):
         from web3 import Web3
 
         if self.rpc_url:
             self.w3 = Web3(Web3.HTTPProvider(self.rpc_url))
             if self.private_key:
-                self.account = self.w3.eth.account.from_key(self.private_key)
+                clean_key = self.private_key.strip()
+                if len(clean_key) == 42 and clean_key.startswith("0x"):
+                    raise ValueError(
+                        f"EVM_PRIVATE_KEY '{clean_key}' is a public wallet address, NOT a private key!\n"
+                        "To export your private key from MetaMask: Click Account Menu ➔ Account Details ➔ Show Private Key."
+                    )
+                self.account = self.w3.eth.account.from_key(clean_key)
         else:
             # Fallback to in-process EVM tester for zero-configuration testing
             try:
@@ -334,11 +359,32 @@ class EVMVerificationLedger:
         contract_factory = self.w3.eth.contract(abi=self.abi, bytecode=self.bytecode)
 
         if self.account:
+            try:
+                est_gas = contract_factory.constructor().estimate_gas({"from": sender})
+                gas_limit = int(est_gas * 1.15)
+            except Exception:
+                gas_limit = 1600000
+
+            gas_price = self.w3.eth.gas_price
+            balance = self.w3.eth.get_balance(sender)
+            required = gas_limit * gas_price
+            if balance < required:
+                raise RuntimeError(
+                    f"Insufficient Sepolia ETH to deploy a new smart contract!\n"
+                    f"Wallet: {sender}\n"
+                    f"Current Balance: {self.w3.from_wei(balance, 'ether')} ETH\n"
+                    f"Required to Deploy: ~{self.w3.from_wei(required, 'ether')} ETH\n\n"
+                    f"👉 Claim free Sepolia ETH (instant 0.05 ETH) at:\n"
+                    f"   https://cloud.google.com/application/web3/faucet/ethereum/sepolia\n"
+                    f"   or https://sepoliafaucet.com\n\n"
+                    f"Alternatively, if the contract is already deployed, set CONTRACT_ADDRESS in .env."
+                )
+
             tx = contract_factory.constructor().build_transaction({
                 "from": sender,
                 "nonce": self.w3.eth.get_transaction_count(sender),
-                "gas": 3000000,
-                "gasPrice": self.w3.eth.gas_price,
+                "gas": gas_limit,
+                "gasPrice": gas_price,
             })
             signed = self.account.sign_transaction(tx)
             tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
@@ -379,11 +425,16 @@ class EVMVerificationLedger:
         )
 
         if self.account:
+            try:
+                est_gas = tx_fn.estimate_gas({"from": sender})
+                gas_limit = int(est_gas * 1.2)
+            except Exception:
+                gas_limit = 250000
+
             tx_payload = tx_fn.build_transaction({
                 "from": sender,
-                "to": self.contract_address,
                 "nonce": self.w3.eth.get_transaction_count(sender),
-                "gas": 500000,
+                "gas": gas_limit,
                 "gasPrice": self.w3.eth.gas_price,
             })
             signed = self.account.sign_transaction(tx_payload)

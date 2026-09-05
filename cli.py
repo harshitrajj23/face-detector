@@ -291,6 +291,9 @@ def cmd_scan(args):
     t_chain.add_row("Face Fingerprint Anchored", f"[yellow]{rec.face_hash}[/yellow]")
     t_chain.add_row("Post Fingerprint Anchored", f"[yellow]{rec.post_hash}[/yellow]")
     console.print(t_chain)
+    if rec.blockchain_type == "evm" and rec.transaction_hash:
+        tx_hex = rec.transaction_hash if rec.transaction_hash.startswith("0x") else f"0x{rec.transaction_hash}"
+        console.print(f"  🌐 [bold cyan]Sepolia Etherscan Explorer:[/bold cyan] [underline blue]https://sepolia.etherscan.io/tx/{tx_hex}[/underline blue]\n")
 
     # --- Section 4: On-Chain Audit Verification Certificate ---
     audit = out.audit_result
