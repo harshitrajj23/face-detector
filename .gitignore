@@ -1,0 +1,73 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# C extensions
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+.env.virtualenv/
+
+# Environment Variables & API Secrets (NEVER commit secrets)
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# IDE & Operating System files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# Pytest, Testing & Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+
+# Dynamic Runtime Artifacts (Keep folders via .gitkeep, ignore generated files)
+data/crops/*
+!data/crops/.gitkeep
+
+data/inputs/*
+!data/inputs/.gitkeep
+
+chaindata/ledger.json
+!chaindata/.gitkeep
