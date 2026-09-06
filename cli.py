@@ -127,6 +127,33 @@ def resolve_image_input(path_or_url: str) -> str:
     return expanded
 
 
+def extract_smart_hint(source_str: str) -> Optional[str]:
+    """Extracts a clean subject name from a Wikipedia URL, Wikimedia Commons URL, or image filename."""
+    if not source_str:
+        return None
+    # 1. Wikipedia article URL: e.g. /wiki/Virat_Kohli -> Virat Kohli
+    wiki_art = re.search(r'/wiki/(?!File:|Image:)([^/?#]+)', source_str)
+    if wiki_art:
+        return wiki_art.group(1).replace('_', ' ').strip()
+
+    # 2. Extract from filename
+    base = os.path.basename(source_str.split('?')[0])
+    base = os.path.splitext(base)[0]
+    base = re.sub(r'^(File|Image)[:_]', '', base, flags=re.IGNORECASE)
+    base = re.sub(r'[_\-]+', ' ', base)
+    base = re.sub(r'^(the\s+)?(official\s+)?(portrait|photo|picture|image)\s+(of\s+)?', '', base, flags=re.IGNORECASE)
+    base = re.sub(r'^(Shri|Dr|Mr|Mrs|Ms|Honorable)\s+', '', base, flags=re.IGNORECASE)
+    base = re.sub(r'^Prime Minister of [^,]+,\s*(?:Shri\s*)?', '', base, flags=re.IGNORECASE)
+    parts = re.split(r'\b(during|at|match|stadium|test\s+match|vs|on\s+\d+)\b', base, flags=re.IGNORECASE)
+    cand = parts[0].strip(' ,-_')
+    words = cand.split()
+    if words:
+        cand_str = ' '.join(words[:3]) if len(words) > 3 else ' '.join(words)
+        if len(cand_str) >= 3 and not cand_str.isnumeric():
+            return cand_str
+    return None
+
+
 def prompt_for_image() -> Tuple[str, Optional[str]]:
     """
     Interactively prompts the user to select or enter an image path or URL.
@@ -157,9 +184,11 @@ def prompt_for_image() -> Tuple[str, Optional[str]]:
     elif choice == "5":
         raw = console.input("[bold yellow]Enter image file path or URL: [/bold yellow]").strip()
         chosen_path = resolve_image_input(raw)
+        default_hint = extract_smart_hint(raw) or extract_smart_hint(chosen_path)
     else:
         # User pasted path or URL directly
         chosen_path = resolve_image_input(choice)
+        default_hint = extract_smart_hint(choice) or extract_smart_hint(chosen_path)
 
     # Prompt for optional query hint
     hint_prompt = f"Enter subject name or query hint (press Enter to use '{default_hint}' if blank): " if default_hint else "Enter subject name or query hint (optional, press Enter to skip): "

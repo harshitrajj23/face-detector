@@ -334,28 +334,39 @@ class LiveWebSocialSearchProvider(SearchProviderBase):
         if DDGS is None:
             return []
 
-        subject = (
-            query_hint.strip()
-            if query_hint
-            else os.path.splitext(os.path.basename(face_result.source_image))[0].replace("_", " ")
-        )
+        def _clean_subject(raw: str) -> str:
+            if not raw:
+                return ""
+            clean = re.sub(r'^(File|Image)[:_]', '', raw, flags=re.IGNORECASE)
+            clean = re.sub(r'[_\-]+', ' ', clean)
+            clean = re.sub(r'^(the\s+)?(official\s+)?(portrait|photo|picture|image)\s+(of\s+)?', '', clean, flags=re.IGNORECASE)
+            clean = re.sub(r'^(Shri|Dr|Mr|Mrs|Ms|Honorable)\s+', '', clean, flags=re.IGNORECASE)
+            clean = re.sub(r'^Prime Minister of [^,]+,\s*(?:Shri\s*)?', '', clean, flags=re.IGNORECASE)
+            parts = re.split(r'\b(during|at|match|stadium|test\s+match|vs|on\s+\d+)\b', clean, flags=re.IGNORECASE)
+            cand = parts[0].strip(' ,-_')
+            words = cand.split()
+            if words:
+                return ' '.join(words[:3]) if len(words) > 3 else ' '.join(words)
+            return clean
+
+        raw_subject = query_hint.strip() if query_hint else os.path.splitext(os.path.basename(face_result.source_image))[0]
+        subject = _clean_subject(raw_subject)
 
         # Build dedicated social media queries targeting real public posts/threads
         social_queries = [
-            f'"{subject}" site:twitter.com status photo',
-            f'"{subject}" site:x.com status photo',
-            f'"{subject}" site:reddit.com comments photo',
-            f'"{subject}" site:linkedin.com posts photo',
-            f'"{subject}" site:instagram.com photo',
-            f'"{subject}" site:twitter.com status',
-            f'"{subject}" site:reddit.com comments',
-            f'"{subject}" site:linkedin.com posts',
+            f'{subject} site:twitter.com status photo',
+            f'{subject} site:x.com status photo',
+            f'{subject} site:reddit.com comments photo',
+            f'{subject} site:instagram.com photo',
+            f'{subject} site:twitter.com status',
+            f'{subject} site:reddit.com comments',
+            f'{subject} site:linkedin.com posts',
         ]
 
         # Secondary web/news query pool as fallback only
         web_queries = [
-            f'"{subject}" photo',
-            f'"{subject}" news article',
+            f'{subject} photo',
+            f'{subject} news article',
         ]
 
         try:
