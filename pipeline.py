@@ -32,7 +32,7 @@ class VerificationPipeline:
 
     def __init__(
         self,
-        blockchain_type: str = "native",  # 'native' or 'evm'
+        blockchain_type: str = "evm",  # Default to 'evm' (Ethereum Sepolia)
         serpapi_key: Optional[str] = None,
         evm_rpc_url: Optional[str] = None,
         evm_private_key: Optional[str] = None,

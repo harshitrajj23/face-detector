@@ -221,7 +221,7 @@ def cmd_scan(args):
             console.print(f"[bold red]Error resolving image:[/bold red] {e}")
             sys.exit(1)
 
-    chain_type = getattr(args, "chain", None) or "native"
+    chain_type = getattr(args, "chain", None) or "evm"
     platform_pref = getattr(args, "platform", None)
 
     console.print(f"\n[bold yellow]▶ INITIALIZING VERIFICATION PIPELINE[/bold yellow] (Target Chain: [cyan]{chain_type.upper()}[/cyan])\n")
@@ -343,7 +343,7 @@ def cmd_scan(args):
 def cmd_verify(args):
     print_banner()
     record_id = args.record_id
-    chain_type = args.chain or "native"
+    chain_type = getattr(args, "chain", None) or "evm"
 
     console.print(f"[bold yellow]Auditing Record ID on {chain_type.upper()} blockchain:[/bold yellow] [cyan]{record_id}[/cyan]\n")
 
@@ -479,7 +479,7 @@ def main():
     scan_parser = subparsers.add_parser("scan", help="Run end-to-end face scan to blockchain verification pipeline")
     scan_parser.add_argument("image", nargs="?", default=None, help="Path or URL to input face image (if omitted, prompts interactively)")
     scan_parser.add_argument("--image", "-i", dest="image_opt", help="Path or URL to input face image")
-    scan_parser.add_argument("--chain", choices=["native", "evm"], default="native", help="Target blockchain (default: native)")
+    scan_parser.add_argument("--chain", choices=["evm", "native"], default="evm", help="Target blockchain (default: evm - Ethereum Sepolia)")
     scan_parser.add_argument("--query", "-q", help="Optional query hint (e.g. subject name) for social search")
     scan_parser.add_argument("--platform", "-p", choices=["twitter", "x", "linkedin", "reddit", "instagram"], help="Preferred social media platform")
     scan_parser.add_argument("--offline-fallback", action="store_true", help="Allow sample corpus fallback (for offline/air-gapped testing)")
@@ -487,7 +487,7 @@ def main():
     # Command: verify
     verify_parser = subparsers.add_parser("verify", help="Re-verify an existing record against the blockchain")
     verify_parser.add_argument("record_id", help="Record ID on the blockchain")
-    verify_parser.add_argument("--chain", choices=["native", "evm"], default="native", help="Blockchain type (default: native)")
+    verify_parser.add_argument("--chain", choices=["evm", "native"], default="evm", help="Blockchain type (default: evm - Ethereum Sepolia)")
     verify_parser.add_argument("--face-hash", help="Face hash to test against record")
     verify_parser.add_argument("--post-hash", help="Post hash to test against record")
 
@@ -503,7 +503,7 @@ def main():
     demo_parser = subparsers.add_parser("demo", help="Execute ready-to-record automated pipeline demonstration")
     demo_parser.add_argument("--image", "-i", default=None, help="Custom image path or URL to use in demo")
     demo_parser.add_argument("--query", "-q", default=None, help="Custom query hint for demo")
-    demo_parser.add_argument("--chain", choices=["native", "evm"], default="native", help="Target blockchain (default: native)")
+    demo_parser.add_argument("--chain", choices=["evm", "native"], default="evm", help="Target blockchain (default: evm - Ethereum Sepolia)")
     demo_parser.add_argument("--offline-fallback", action="store_true", help="Allow sample corpus fallback if offline")
 
     args = parser.parse_args()
@@ -521,7 +521,7 @@ def main():
         demo_query = getattr(args, "query", None) or ("Elon Musk" if "elon" in demo_image.lower() else None)
         args.image = demo_image
         args.query = demo_query
-        args.chain = getattr(args, "chain", None) or "native"
+        args.chain = getattr(args, "chain", None) or "evm"
         args.platform = None
         args.offline_fallback = getattr(args, "offline_fallback", False)
         out = cmd_scan(args)
@@ -531,8 +531,8 @@ def main():
         print_banner()
         console.print("[bold cyan]Welcome to the Face Identification & Blockchain Verification Pipeline![/bold cyan]\n")
         console.print("Please select an action:")
-        console.print("  [bold green][1][/bold green] Scan Face Image (Input your own image, paste URL, or choose sample)")
-        console.print("  [bold green][2][/bold green] Run Automated End-to-End Demo")
+        console.print("  [bold green][1][/bold green] Scan Face Image (Input your own image, paste URL, or choose sample) [bold cyan](Ethereum Sepolia)[/bold cyan]")
+        console.print("  [bold green][2][/bold green] Run Automated End-to-End Demo [bold cyan](Ethereum Sepolia)[/bold cyan]")
         console.print("  [bold green][3][/bold green] Explore Blockchain Ledger")
         console.print("  [bold green][4][/bold green] Demonstrate Blockchain Tamper-Evidence")
         console.print("  [bold green][5][/bold green] Exit\n")
@@ -546,14 +546,14 @@ def main():
             args.command = "scan"
             args.image = None
             args.image_opt = None
-            args.chain = "native"
+            args.chain = "evm"
             args.query = None
             args.platform = None
             args.offline_fallback = False
             cmd_scan(args)
         elif choice == "2":
             args.image = "data/samples/elon_musk.jpg"
-            args.chain = "native"
+            args.chain = "evm"
             args.query = "Elon Musk"
             args.platform = None
             args.offline_fallback = False
