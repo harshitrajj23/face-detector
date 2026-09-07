@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 import requests
 import cv2
 import numpy as np
+import concurrent.futures
 
 from core.models import SocialPost, FaceDetectionResult
 
@@ -352,21 +353,14 @@ class LiveWebSocialSearchProvider(SearchProviderBase):
         raw_subject = query_hint.strip() if query_hint else os.path.splitext(os.path.basename(face_result.source_image))[0]
         subject = _clean_subject(raw_subject)
 
-        # Build dedicated social media queries targeting real public posts/threads
-        social_queries = [
-            f'{subject} site:twitter.com status photo',
-            f'{subject} site:x.com status photo',
-            f'{subject} site:reddit.com comments photo',
-            f'{subject} site:instagram.com photo',
-            f'{subject} site:twitter.com status',
-            f'{subject} site:reddit.com comments',
-            f'{subject} site:linkedin.com posts',
+        # Targeted high-yield queries (only run what is needed)
+        primary_queries = [
+            (f'{subject} site:twitter.com status photo', True),
+            (f'{subject} site:reddit.com comments photo', True),
         ]
-
-        # Secondary web/news query pool as fallback only
-        web_queries = [
-            f'{subject} photo',
-            f'{subject} news article',
+        fallback_queries = [
+            (f'{subject} site:x.com status', False),
+            (f'{subject} photo', True),
         ]
 
         try:
@@ -380,69 +374,72 @@ class LiveWebSocialSearchProvider(SearchProviderBase):
         raw_candidates: List[Dict[str, Any]] = []
         seen_urls = set()
 
-        # Step 1: Retrieve public social media candidates
-        for q in social_queries:
+        def _execute_query(q_str: str, is_img: bool):
+            items = []
             try:
-                if "photo" in q:
-                    for item in list(ddgs.images(q, max_results=3)):
+                if is_img:
+                    for item in list(ddgs.images(q_str, max_results=3)):
                         url = item.get("url", "")
                         if url and url not in seen_urls:
                             seen_urls.add(url)
-                            raw_candidates.append({
+                            items.append({
                                 "title": item.get("title", ""),
                                 "page_url": url,
                                 "image_url": item.get("image", ""),
                                 "snippet": item.get("title", ""),
                             })
                 else:
-                    for item in list(ddgs.text(q, max_results=2)):
+                    for item in list(ddgs.text(q_str, max_results=2)):
                         href = item.get("href", "")
                         if href and href not in seen_urls:
                             seen_urls.add(href)
-                            raw_candidates.append({
+                            items.append({
                                 "title": item.get("title", ""),
                                 "page_url": href,
                                 "image_url": None,
                                 "snippet": item.get("body", item.get("title", "")),
                             })
             except Exception as e:
-                logging.debug(f"DDGS social query '{q}' error: {e}")
+                logging.debug(f"DDGS query '{q_str}' error: {e}")
+            return items
 
-        # Step 2: Retrieve secondary web candidates as fallback
-        for q in web_queries:
-            try:
-                if "photo" in q:
-                    for item in list(ddgs.images(q, max_results=2)):
-                        url = item.get("url", "")
-                        if url and url not in seen_urls:
-                            seen_urls.add(url)
-                            raw_candidates.append({
-                                "title": item.get("title", ""),
-                                "page_url": url,
-                                "image_url": item.get("image", ""),
-                                "snippet": item.get("title", ""),
-                            })
-                else:
-                    for item in list(ddgs.text(q, max_results=2)):
-                        href = item.get("href", "")
-                        if href and href not in seen_urls:
-                            seen_urls.add(href)
-                            raw_candidates.append({
-                                "title": item.get("title", ""),
-                                "page_url": href,
-                                "image_url": None,
-                                "snippet": item.get("body", item.get("title", "")),
-                            })
-            except Exception as e:
-                logging.debug(f"DDGS web query '{q}' error: {e}")
+        # Step 1: Run primary social queries
+        for q_str, is_img in primary_queries:
+            new_items = _execute_query(q_str, is_img)
+            raw_candidates.extend(new_items)
+            if len(raw_candidates) >= 3:
+                break
+
+        # Step 2: Fallback queries only if needed
+        if len(raw_candidates) < 2:
+            for q_str, is_img in fallback_queries:
+                new_items = _execute_query(q_str, is_img)
+                raw_candidates.extend(new_items)
+                if len(raw_candidates) >= 3:
+                    break
 
         if not raw_candidates:
             return []
 
-        # Step 3: Download candidate images, run YuNet+SFace, and compute facial biometric similarity
+        # Cap candidates to evaluate to top 5 to keep latency ultra-low
+        eval_candidates = raw_candidates[:5]
+
+        # Step 3: Concurrently download candidate images in parallel
+        def _fetch_img(cand: Dict[str, Any]):
+            img_url = cand.get("image_url")
+            if not img_url or not face_engine:
+                return cand["page_url"], None
+            return cand["page_url"], download_cv2_image(img_url, timeout=2)
+
+        cand_img_map: Dict[str, Optional[np.ndarray]] = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            for page_url, img_data in pool.map(_fetch_img, eval_candidates):
+                cand_img_map[page_url] = img_data
+
+        # Step 4: Run SFace metric ranking on downloaded images
         scored_candidates: List[Tuple[float, SocialPost]] = []
 
-        for candidate in raw_candidates:
+        for candidate in eval_candidates:
             page_url = candidate["page_url"]
             title = candidate.get("title", "")
             snippet = candidate.get("snippet", "")
@@ -454,21 +451,20 @@ class LiveWebSocialSearchProvider(SearchProviderBase):
 
             similarity = 0.35 if platform_type == "SOCIAL" else 0.20
 
-            if img_url and face_engine:
-                cand_img = download_cv2_image(img_url, timeout=4)
-                if cand_img is not None:
-                    try:
-                        ch, cw, _ = cand_img.shape
-                        face_engine.detector.setInputSize((cw, ch))
-                        _, cfaces = face_engine.detector.detect(cand_img)
-                        if cfaces is not None and len(cfaces) > 0:
-                            prim_face = max(cfaces, key=lambda f: f[-1])
-                            aligned = face_engine.recognizer.alignCrop(cand_img, prim_face)
-                            feat = face_engine.recognizer.feature(aligned).flatten().tolist()
-                            sim_score = face_engine.compare_embeddings(face_result.embedding, feat)
-                            similarity = max(similarity, float(sim_score))
-                    except Exception as e:
-                        logging.debug(f"Face comparison error on candidate: {e}")
+            cand_img = cand_img_map.get(page_url)
+            if cand_img is not None and face_engine:
+                try:
+                    ch, cw, _ = cand_img.shape
+                    face_engine.detector.setInputSize((cw, ch))
+                    _, cfaces = face_engine.detector.detect(cand_img)
+                    if cfaces is not None and len(cfaces) > 0:
+                        prim_face = max(cfaces, key=lambda f: f[-1])
+                        aligned = face_engine.recognizer.alignCrop(cand_img, prim_face)
+                        feat = face_engine.recognizer.feature(aligned).flatten().tolist()
+                        sim_score = face_engine.compare_embeddings(face_result.embedding, feat)
+                        similarity = max(similarity, float(sim_score))
+                except Exception as e:
+                    logging.debug(f"Face comparison error on candidate: {e}")
 
             post = SocialPost(
                 platform=platform,
@@ -486,7 +482,7 @@ class LiveWebSocialSearchProvider(SearchProviderBase):
             )
             scored_candidates.append((similarity, post))
 
-        # Step 4: Tiered ranking giving strict precedence to authentic individual social media posts
+        # Step 5: Tiered ranking giving strict precedence to authentic individual social media posts
         return rank_candidates_social_first(scored_candidates)
 
 

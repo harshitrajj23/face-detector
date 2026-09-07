@@ -407,7 +407,7 @@ class EVMVerificationLedger:
         if not self.is_available():
             raise RuntimeError("EVM Blockchain connection is not available.")
 
-        combined = f"{face_hash}:{post.post_hash}".encode("utf-8")
+        combined = f"{face_hash}:{post.post_hash}:{time.time_ns()}".encode("utf-8")
         record_id_hex = hashlib.sha256(combined).hexdigest()
         record_id_bytes = bytes.fromhex(record_id_hex)
         face_bytes = bytes.fromhex(face_hash)
@@ -431,18 +431,22 @@ class EVMVerificationLedger:
             except Exception:
                 gas_limit = 250000
 
+            gas_price = int(self.w3.eth.gas_price * 1.35)
             tx_payload = tx_fn.build_transaction({
                 "from": sender,
-                "nonce": self.w3.eth.get_transaction_count(sender),
+                "nonce": self.w3.eth.get_transaction_count(sender, "pending"),
                 "gas": gas_limit,
-                "gasPrice": self.w3.eth.gas_price,
+                "gasPrice": gas_price,
+                "chainId": self.w3.eth.chain_id,
             })
             signed = self.account.sign_transaction(tx_payload)
             tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
         else:
             tx_hash = tx_fn.transact({"from": sender})
 
-        receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+        receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=180)
+        if receipt.status != 1:
+            raise RuntimeError(f"EVM transaction reverted on chain! Tx: {receipt.transactionHash.hex()}")
         block = self.w3.eth.get_block(receipt.blockNumber)
 
         return BlockchainRecord(

@@ -305,7 +305,8 @@ def cmd_scan(args):
     t_post.add_row("Publication Timestamp", post.published_date or "Not Disclosed by Platform")
     t_post.add_row("Post Canonical Hash", f"[bold yellow]{post.post_hash}[/bold yellow]")
     console.print(t_post)
-    console.print(f"  🔗 [bold cyan]Direct Clickable URL:[/bold cyan] {post.post_url}\n")
+    console.print(f"  🔗 [bold cyan]Direct Post URL:[/bold cyan] [link={post.post_url}][bold green]👉 [Cmd + Click] Open Post[/bold green][/link]")
+    console.print(f"  [underline blue]{post.post_url}[/underline blue]\n", soft_wrap=True)
 
     # --- Section 3: Blockchain Record ---
     rec = out.blockchain_record
@@ -322,7 +323,10 @@ def cmd_scan(args):
     console.print(t_chain)
     if rec.blockchain_type == "evm" and rec.transaction_hash:
         tx_hex = rec.transaction_hash if rec.transaction_hash.startswith("0x") else f"0x{rec.transaction_hash}"
-        console.print(f"  🌐 [bold cyan]Sepolia Etherscan Explorer:[/bold cyan] [underline blue]https://sepolia.etherscan.io/tx/{tx_hex}[/underline blue]\n")
+        full_url = f"https://sepolia.etherscan.io/tx/{tx_hex}"
+        console.print(f"\n  🌐 [bold cyan]Sepolia Etherscan Explorer:[/bold cyan]")
+        console.print(f"  [link={full_url}][bold green]👉 [Cmd + Click] Click Here to Open on Etherscan[/bold green][/link]")
+        console.print(f"  [underline blue]{full_url}[/underline blue]\n", soft_wrap=True)
 
     # --- Section 4: On-Chain Audit Verification Certificate ---
     audit = out.audit_result
